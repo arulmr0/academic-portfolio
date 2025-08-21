@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Publications - Dr. Arulmurugan Ramu</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container">
+      <a class="navbar-brand" href="index.html">Portfolio</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item"><a class="nav-link" href="about.html">About</a></li>
+          <li class="nav-item"><a class="nav-link active" href="publications.html">Publications</a></li>
+          <li class="nav-item"><a class="nav-link" href="contact.html">Contact</a></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Search & Filters -->
+  <div class="container py-4">
+    <h2 class="mb-4 text-center">Publications</h2>
+    <div class="row">
+      <div class="col-md-8 mb-3">
+        <input type="text" id="searchInput" class="form-control" placeholder="Search by title or venue...">
+      </div>
+      <div class="col-md-4 mb-3">
+        <select id="yearFilter" class="form-control">
+          <option value="">Filter by Year</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Metrics -->
+  <div class="container py-5">
+    <h3 class="text-center">Research Impact</h3>
+    <div class="row text-center">
+      <div class="col-md-4"><div class="stats-box"><div id="citations" class="stats-number">0</div><div>Citations</div></div></div>
+      <div class="col-md-4"><div class="stats-box"><div id="hindex" class="stats-number">0</div><div>h-index</div></div></div>
+      <div class="col-md-4"><div class="stats-box"><div id="i10index" class="stats-number">0</div><div>i10-index</div></div></div>
+    </div>
+  </div>
+
+  <!-- Publication Sections -->
+  <div class="container">
+    <h4>Journal Articles</h4>
+    <div id="journals" class="list-group mb-4"></div>
+    <h4>Books</h4>
+    <div id="books" class="list-group mb-4"></div>
+    <h4>Book Chapters</h4>
+    <div id="chapters" class="list-group mb-4"></div>
+    <h4>Conference Papers</h4>
+    <div id="conferences" class="list-group mb-4"></div>
+    <h4>Others</h4>
+    <div id="others" class="list-group mb-4"></div>
+  </div>
+
+  <!-- Show More Button -->
+  <div class="text-center my-4">
+    <button id="showMoreBtn" class="btn btn-primary">Show More</button>
+  </div>
+
+  <!-- Charts -->
+  <div class="container py-5">
+    <h3 class="mb-4 text-center">Research Trends</h3>
+    <div class="row">
+      <div class="col-md-6">
+        <h5 class="text-center">Publications Per Year</h5>
+        <canvas id="pubsPerYear"></canvas>
+      </div>
+      <div class="col-md-6">
+        <h5 class="text-center">Publications by Type</h5>
+        <canvas id="pubsByType"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script>
+    let publications = [];
+    let displayCount = 0;
+    const batchSize = 20;
+    let pubsPerYearChart, pubsByTypeChart;
+
+    async function loadPublications() {
+      const url = "https://api.openalex.org/works?filter=author.orcid:0000-0003-1030-9565&per-page=200&sort=publication_date:desc";
+      const response = await fetch(url);
+      const data = await response.json();
+      publications = data.results;
+      populateYearFilter();
+      displayPublications(true);
+    }
+
+    function populateYearFilter() {
+      let years = [...new Set(publications.map(p => p.publication_year).filter(Boolean))].sort((a,b) => b-a);
+      let yearFilter = document.getElementById("yearFilter");
+      years.forEach(year => {
+        let opt = document.createElement("option");
+        opt.value = year; opt.innerText = year;
+        yearFilter.appendChild(opt);
+      });
+    }
+
+    function calculateMetrics(filtered) {
+      let citations = filtered.reduce((sum,w)=>sum+(w.cited_by_count||0),0);
+      let counts = filtered.map(w=>w.cited_by_count||0).sort((a,b)=>b-a);
+      let h=0; for (let i=0;i<counts.length;i++){ if(counts[i]>=i+1) h=i+1; }
+      let i10 = counts.filter(c=>c>=10).length;
+      animateValue("citations",parseInt(document.getElementById("citations").innerText),citations,500);
+      animateValue("hindex",parseInt(document.getElementById("hindex").innerText),h,500);
+      animateValue("i10index",parseInt(document.getElementById("i10index").innerText),i10,500);
+    }
+
+    function animateValue(id,start,end,duration){
+      let obj=document.getElementById(id);
+      let range=end-start; let startTime=null;
+      function step(ts){ if(!startTime) startTime=ts;
+        let progress=Math.min((ts-startTime)/duration,1);
+        obj.innerText=Math.floor(progress*range+start);
+        if(progress<1) window.requestAnimationFrame(step);
+      }
+      window.requestAnimationFrame(step);
+    }
+
+    function updateCharts(filtered){
+      let yearCounts={};
+      filtered.forEach(w=>{let y=w.publication_year;if(y) yearCounts[y]=(yearCounts[y]||0)+1;});
+      let years=Object.keys(yearCounts).sort((a,b)=>a-b);
+      let vals=years.map(y=>yearCounts[y]);
+
+      let typeCounts={Journals:0,Books:0,Chapters:0,Conferences:0,Others:0};
+      filtered.forEach(w=>{
+        switch(w.type){
+          case "journal-article": typeCounts.Journals++; break;
+          case "book": typeCounts.Books++; break;
+          case "book-chapter": typeCounts.Chapters++; break;
+          case "proceedings-article": typeCounts.Conferences++; break;
+          default: typeCounts.Others++;
+        }
+      });
+
+      if(pubsPerYearChart) pubsPerYearChart.destroy();
+      if(pubsByTypeChart) pubsByTypeChart.destroy();
+
+      pubsPerYearChart=new Chart(document.getElementById("pubsPerYear"),{
+        type:"bar", data:{labels:years, datasets:[{data:vals,label:"Publications",backgroundColor:"rgba(54,162,235,0.6)"}]},
+        options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
+      });
+
+      pubsByTypeChart=new Chart(document.getElementById("pubsByType"),{
+        type:"pie", data:{labels:Object.keys(typeCounts),datasets:[{data:Object.values(typeCounts),backgroundColor:[
+          "rgba(54,162,235,0.6)","rgba(255,99,132,0.6)","rgba(255,206,86,0.6)","rgba(75,192,192,0.6)","rgba(153,102,255,0.6)"]}]}
+      });
+    }
+
+    function displayPublications(reset=false){
+      if(reset){
+        displayCount=0;
+        journals.innerHTML=books.innerHTML=chapters.innerHTML=conferences.innerHTML=others.innerHTML="";
+      }
+      let query=document.getElementById("searchInput").value.toLowerCase();
+      let year=document.getElementById("yearFilter").value;
+
+      let filtered=publications.filter(w=>{
+        let t=(w.display_name||"").toLowerCase();
+        let v=(w.host_venue?w.host_venue.display_name:"").toLowerCase();
+        let y=w.publication_year||"";
+        if(query && !t.includes(query)&&!v.includes(query)) return false;
+        if(year && y!=year) return false;
+        return true;
+      });
+
+      calculateMetrics(filtered);
+      updateCharts(filtered);
+
+      let nextBatch=filtered.slice(displayCount,displayCount+batchSize);
+      nextBatch.forEach(w=>{
+        let title=w.display_name||"Untitled";
+        let yearPub=w.publication_year||"n.d.";
+        let venue=w.host_venue?w.host_venue.display_name:"Unknown Venue";
+        let doi=w.doi?`<a href="https://doi.org/${w.doi}" target="_blank">DOI</a>`:"";
+        let authors=(w.authorships||[]).map(a=>a.author.display_name).join(", ");
+        let citationAPA=`${authors} (${yearPub}). ${title}. ${venue}. ${w.doi? "https://doi.org/"+w.doi:""}`;
+
+        let item=`
+          <div class="list-group-item">
+            <strong>${title}</strong><br>
+            <small>${venue}, ${yearPub}</small><br>
+            ${doi}<br>
+            <em>APA Citation:</em><br>
+            <small>${citationAPA}</small><br>
+            <button class="btn btn-sm btn-outline-primary mt-2" onclick="downloadBibtex('${w.id}')">Download BibTeX</button>
+            <button class="btn btn-sm btn-outline-secondary mt-2" onclick="copyCitation(\`${citationAPA}\`)">Copy APA</button>
+          </div>`;
+        switch(w.type){
+          case "journal-article": journals.innerHTML+=item; break;
+          case "book": books.innerHTML+=item; break;
+          case "book-chapter": chapters.innerHTML+=item; break;
+          case "proceedings-article": conferences.innerHTML+=item; break;
+          default: others.innerHTML+=item;
+        }
+      });
+
+      displayCount+=batchSize;
+      document.getElementById("showMoreBtn").style.display=(displayCount<filtered.length)?"block":"none";
+    }
+
+    async function downloadBibtex(workId){
+      try{
+        const res=await fetch(`${workId}?format=bibtex`);
+        const bib=await res.text();
+        let blob=new Blob([bib],{type:"text/plain"});
+        let link=document.createElement("a");
+        link.href=URL.createObjectURL(blob);
+        link.download="citation.bib";
+        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+      }catch(e){alert("Could not fetch BibTeX");}
+    }
+
+    function copyCitation(txt){
+      navigator.clipboard.writeText(txt).then(()=>alert("APA citation copied ✅"));
+    }
+
+    document.getElementById("searchInput").addEventListener("input",()=>displayPublications(true));
+    document.getElementById("yearFilter").addEventListener("change",()=>displayPublications(true));
+    document.getElementById("showMoreBtn").addEventListener("click",()=>displayPublications());
+
+    loadPublications();
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
